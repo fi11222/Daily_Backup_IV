@@ -25,8 +25,6 @@ import psycopg2
 import psutil
 import io
 import subprocess
-import email
-import pytz
 import smtplib
 
 __author__ = 'Nicolas Reimen'
