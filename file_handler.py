@@ -762,26 +762,6 @@ class FileHandler:
         :param p_attachment_path: optional file to attach
         :return: Nothing
         """
-        # message context with headers and body
-        # l_message = """From: {0}
-        #     To: {1}
-        #     Date: {2}
-        #     Subject: {3}
-
-        #     {4}
-        # """.format(
-        #     p_from,
-        #     p_to,
-        #     email.utils.format_datetime(datetime.datetime.now(tz=pytz.timezone(g_timeZone))),
-        #     p_subject,
-        #     re.sub('[ \t]+', ' ', p_text)
-        # )
-
-        # removes spaces at the beginning of lines
-        # l_message = re.sub('^[ \t\r\f\v]+', '', l_message, flags=re.MULTILINE)
-
-        # from email.MIMEMultipart import MIMEMultipart
-        # from email.MIMEText import MIMEText
         global g_err_log_file
 
         l_text = re.sub('[ \t]+', ' ', p_text)
@@ -905,6 +885,7 @@ if __name__ == "__main__":
     # g_err_log_file.close()
     if g_err_presence:
         l_msg += '*** THERE ARE ERRORS ***\n'
+        print('*** THERE ARE ERRORS ***')
         FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg, g_err_log_path)
     else:
         FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg)
