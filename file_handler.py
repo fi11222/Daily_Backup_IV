@@ -883,6 +883,8 @@ if __name__ == "__main__":
         l_msg += 'High level Python Error:\n' + repr(e0) + '\n' + traceback.format_exc()
 
     # g_err_log_file.close()
+    if not g_silent:
+        print('Sending e-mail ...')
     if g_err_presence:
         l_msg += '*** THERE ARE ERRORS ***\n'
         print('*** THERE ARE ERRORS ***')
