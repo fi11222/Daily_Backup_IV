@@ -72,7 +72,7 @@ g_sesPassword = ''
 # (
 #   "TX_FILE_NAME" text,
 #   "TX_FILE_PATH" text,
-#   "N_LENGTH" integer,
+#   "N_LENGTH" bigint,
 #   "DT_LAST_MOD" timestamp without time zone,
 #   "S_GROUP" character varying(20),
 #   "S_OWNER" character varying(20),
