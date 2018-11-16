@@ -66,8 +66,44 @@ g_sesUserName = ''
 #: Amazon SES pwd
 g_sesPassword = ''
 
+# DROP TABLE if exists public."TB_FILE";
+#
+# CREATE TABLE public."TB_FILE"
+# (
+#   "TX_FILE_NAME" text,
+#   "TX_FILE_PATH" text,
+#   "N_LENGTH" integer,
+#   "DT_LAST_MOD" timestamp without time zone,
+#   "S_GROUP" character varying(20),
+#   "S_OWNER" character varying(20),
+#   "S_PERMISSIONS" character varying(3),
+#   "S_EXTENSION" character varying(10),
+#   CONSTRAINT "TB_FILE_pkey" PRIMARY KEY ("TX_FILE_NAME", "TX_FILE_PATH")
+# )
+# WITH (
+#   OIDS=FALSE
+# );
+# ALTER TABLE public."TB_FILE"
+#   OWNER TO postgres;
+
+# DROP TABLE if exists public."TB_ACTION";
+#
+# CREATE TABLE public."TB_ACTION"
+# (
+#   "ID_ACTION" bigserial NOT NULL,
+#   "S_ACTION_TYPE" character varying(1),
+#   "TX_PATH1" text,
+#   "TX_PATH2" text,
+#   CONSTRAINT "TB_ACTION_pkey" PRIMARY KEY ("ID_ACTION")
+# )
+# WITH (
+#   OIDS=FALSE
+# );
+# ALTER TABLE public."TB_ACTION"
+#   OWNER TO postgres;
 
 # ---------------------------------------------------- Classes ---------------------------------------------------------
+
 
 class FileHandler:
     """
