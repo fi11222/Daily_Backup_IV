@@ -40,7 +40,7 @@ g_silent = False
 g_dbServer = 'localhost'
 g_dbDatabase = 'File_Base'
 g_dbUser = 'postgres'
-g_dbPassword = '15Eyyaka'
+g_dbPassword = 'murugan!'
 
 g_timeZone = 'Asia/Calcutta'
 
@@ -432,8 +432,8 @@ class FileHandler:
             self.m_lmd.strftime('%Y-%m-%d %H:%M:%S'),
             self.m_group,
             self.m_owner,
-            oct(self.m_mode),
-            self.m_extension
+            oct(self.m_mode)[-3:],
+            self.m_extension[-10:]
         ))
         FileHandler.cm_db_buffer_lines += 1
 
