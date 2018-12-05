@@ -331,7 +331,6 @@ class FileHandler:
         Perform final buffer purge and close PostgreSQL connection
         :return: Nothing
         """
-        cls.purge()
         cls.cm_db_connection.close()
         if not g_silent:
             print('Connection to {0} / {1} closed'.format(g_dbServer, g_dbDatabase))
@@ -740,7 +739,7 @@ class FileHandler:
             l_cursor_write.execute("""
                 insert into "TB_CYCLE"("ID_CYCLE")
                     values( %s );
-                """, cls.cm_cycle_uuid,
+                """, (str(cls.cm_cycle_uuid),)
                                    )
 
             cls.cm_db_connection.commit()
@@ -801,6 +800,9 @@ class FileHandler:
         if not g_silent:
             print(l_stats)
 
+        # make sure nothing is left in the buffers
+        cls.purge()
+
         # Update end time into TB_CYCLE
         l_cursor_write = cls.cm_db_connection.cursor()
         try:
@@ -808,7 +810,7 @@ class FileHandler:
                 update "TB_CYCLE"
                     set "DT_END" = %s
                 where "ID_CYCLE" = %s;
-                """, (datetime.datetime.now(), cls.cm_cycle_uuid)
+                """, (datetime.datetime.now(), str(cls.cm_cycle_uuid))
                                    )
 
             cls.cm_db_connection.commit()
@@ -833,13 +835,13 @@ class FileHandler:
                     where "ID_CYCLE" = %s
                     order by "ID_ACTION"
                     limit 100;
-                """, cls.cm_cycle_uuid,
+                """, (str(cls.cm_cycle_uuid),)
             )
 
-            l_stats += '\n'
+            l_stats += '\nFirst 100 operations:\n'
             l_row_count = 0
             for _, l_type, l_p1, l_p2, _ in l_cursor_read:
-                if l_p2 is None:
+                if l_p2 is None or l_p2 == 'None':
                     l_stats += '[{0:3}] {1} {2}\n'.format(l_row_count, l_type, l_p1)
                 else:
                     l_stats += '[{0:3}] {1} {2} --> {3}\n'.format(l_row_count, l_type, l_p1, l_p2)
@@ -848,7 +850,7 @@ class FileHandler:
 
             if not g_silent:
                 print('DB ERROR:', repr(e))
-                print(l_cursor_write.query)
+                print(l_cursor_read.query)
 
             sys.exit(0)
         finally:
