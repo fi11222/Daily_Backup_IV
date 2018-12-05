@@ -26,6 +26,7 @@ import psutil
 import io
 import subprocess
 import smtplib
+import uuid
 
 __author__ = 'Nicolas Reimen'
 
@@ -70,8 +71,8 @@ g_sesPassword = ''
 #
 # CREATE TABLE public."TB_FILE"
 # (
-#   "TX_FILE_NAME" text,
-#   "TX_FILE_PATH" text,
+#   "TX_FILE_NAME" text NOT NULL,
+#   "TX_FILE_PATH" text NOT NULL,
 #   "N_LENGTH" bigint,
 #   "DT_LAST_MOD" timestamp without time zone,
 #   "S_GROUP" character varying(20),
@@ -90,16 +91,32 @@ g_sesPassword = ''
 #
 # CREATE TABLE public."TB_ACTION"
 # (
-#   "ID_ACTION" bigserial NOT NULL,
-#   "S_ACTION_TYPE" character varying(1),
+#   "ID_ACTION" bigint NOT NULL DEFAULT nextval('"TB_ACTION_ID_ACTION_seq"'::regclass),
+#   "S_ACTION_TYPE" character varying(1) NOT NULL,
 #   "TX_PATH1" text,
 #   "TX_PATH2" text,
+#   "ID_CYCLE" uuid NOT NULL,
 #   CONSTRAINT "TB_ACTION_pkey" PRIMARY KEY ("ID_ACTION")
 # )
 # WITH (
 #   OIDS=FALSE
 # );
 # ALTER TABLE public."TB_ACTION"
+#   OWNER TO postgres;
+
+# DROP TABLE if exists public."TB_CYCLE";
+#
+# CREATE TABLE public."TB_CYCLE"
+# (
+#   "ID_CYCLE" uuid NOT NULL,
+#   "DT_START" timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+#   "DT_END" timestamp without time zone,
+#   CONSTRAINT "TB_CYCLE_pkey" PRIMARY KEY ("ID_CYCLE")
+# )
+# WITH (
+#   OIDS=FALSE
+# );
+# ALTER TABLE public."TB_CYCLE"
 #   OWNER TO postgres;
 
 # ---------------------------------------------------- Classes ---------------------------------------------------------
@@ -132,6 +149,9 @@ class FileHandler:
     # dry run flag
     cm_dry_run = True
 
+    # UUID of the current cycle
+    cm_cycle_uuid = None
+
     # statistics counters
     cm_deleted_count = 0
     cm_deleted_size = 0
@@ -153,6 +173,7 @@ class FileHandler:
         cls.cm_db_buffer_lines = 0
         cls.cm_mem_tmp = dict()
         cls.cm_dry_run = True
+        cls.cm_cycle_uuid = None
 
         cls.cm_deleted_count = 0
         cls.cm_deleted_size = 0
@@ -253,6 +274,7 @@ class FileHandler:
                     cls.cm_db_buffer_action,
                     '"TB_ACTION"',
                     columns=(
+                        '"ID_CYCLE"',
                         '"S_ACTION_TYPE"',
                         '"TX_PATH1"',
                         '"TX_PATH2"'
@@ -626,14 +648,14 @@ class FileHandler:
         Log an action to TB_ACTION (through buffer)
 
         :param p_type: 'D' Delete file ('Y' if failure), 'C' Copy file ('Z' if failure),
-            'F' Delete empty folder, 'B' Backup cycle start/end
+            'F' Delete empty folder ('W' if failure)
         :param p_path1: First path (used by all actions)
         :param p_path2: Second path (used only by C and B)
         :return: Nothing
         """
 
-        cls.cm_db_buffer_action.write('{0}\t{1}\t{2}\n'.format(
-            p_type, p_path1, p_path2
+        cls.cm_db_buffer_action.write('{0}\t{1}\t{2}\t{3}\n'.format(
+            cls.cm_cycle_uuid, p_type, p_path1, p_path2
         ))
 
     @classmethod
@@ -650,11 +672,13 @@ class FileHandler:
         try:
             l_cursor_write.execute("""
                 insert into "TB_ACTION"(
+                    "ID_CYCLE",
                     "S_ACTION_TYPE", 
                     "TX_PATH1", 
                     "TX_PATH2")
                     values( %s, %s, %s);
                 """, (
+                    cls.cm_cycle_uuid,
                     p_type,
                     p_path1,
                     p_path2
@@ -706,11 +730,34 @@ class FileHandler:
         # make sure the class is in a pristine state
         cls.reset()
 
+        # create the cycle's UUID
+        cls.cm_cycle_uuid = uuid.uuid1()
+
+        # store UUID into TB_CYCLE
+        cls.open_connection()
+        l_cursor_write = cls.cm_db_connection.cursor()
+        try:
+            l_cursor_write.execute("""
+                insert into "TB_CYCLE"("ID_CYCLE")
+                    values( %s );
+                """, cls.cm_cycle_uuid,
+                                   )
+
+            cls.cm_db_connection.commit()
+        except Exception as e:
+            cls.cm_db_connection.rollback()
+
+            if not g_silent:
+                print('DB ERROR:', repr(e))
+                print(l_cursor_write.query)
+
+            sys.exit(0)
+        finally:
+            # release DB objects once finished
+            l_cursor_write.close()
+
         if g_verbose:
             print('+++++++ INITIAL SCAN ++++++++++')
-
-        cls.open_connection()
-        FileHandler.log_action('B', p_from, p_to)
 
         cls.set_prefix(p_from)
         cls.clear_base()
@@ -753,6 +800,60 @@ class FileHandler:
 
         if not g_silent:
             print(l_stats)
+
+        # Update end time into TB_CYCLE
+        l_cursor_write = cls.cm_db_connection.cursor()
+        try:
+            l_cursor_write.execute("""
+                update "TB_CYCLE"
+                    set "DT_END" = %s
+                where "ID_CYCLE" = %s;
+                """, (datetime.datetime.now(), cls.cm_cycle_uuid)
+                                   )
+
+            cls.cm_db_connection.commit()
+        except Exception as e:
+            cls.cm_db_connection.rollback()
+
+            if not g_silent:
+                print('DB ERROR:', repr(e))
+                print(l_cursor_write.query)
+
+            sys.exit(0)
+        finally:
+            # release DB objects once finished
+            l_cursor_write.close()
+
+        # Add 100 first actions to l_stats
+        l_cursor_read = cls.cm_db_connection.cursor()
+        try:
+            l_cursor_read.execute(
+                """
+                    select * from "TB_ACTION"
+                    where "ID_CYCLE" = %s
+                    order by "ID_ACTION"
+                    limit 100;
+                """, cls.cm_cycle_uuid,
+            )
+
+            l_stats += '\n'
+            l_row_count = 0
+            for _, l_type, l_p1, l_p2, _ in l_cursor_read:
+                if l_p2 is None:
+                    l_stats += '[{0:3}] {1} {2}\n'.format(l_row_count, l_type, l_p1)
+                else:
+                    l_stats += '[{0:3}] {1} {2} --> {3}\n'.format(l_row_count, l_type, l_p1, l_p2)
+                l_row_count += 1
+        except Exception as e:
+
+            if not g_silent:
+                print('DB ERROR:', repr(e))
+                print(l_cursor_write.query)
+
+            sys.exit(0)
+        finally:
+            # release DB objects once finished
+            l_cursor_read.close()
 
         cls.close_connection()
 
@@ -892,6 +993,7 @@ if __name__ == "__main__":
     print('| v. 1.0 - 22/05/2018                                        |')
     print('| Prod.  - 29/05/2018                                        |')
     print('| v. 1.1 - 21/09/2018 Enhanced error handling                |')
+    print('| v. 1.2 - 05/12/2018 Better logging (TB_CYCLE)              |')
     print('+------------------------------------------------------------+')
 
     # testing
