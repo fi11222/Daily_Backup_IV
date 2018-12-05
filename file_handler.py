@@ -625,7 +625,8 @@ class FileHandler:
         """
         Log an action to TB_ACTION (through buffer)
 
-        :param p_type: 'D' Delete file, 'C' Copy file, 'F' Delete empty folder, 'B' Backup cycle start
+        :param p_type: 'D' Delete file ('Y' if failure), 'C' Copy file ('Z' if failure),
+            'F' Delete empty folder, 'B' Backup cycle start/end
         :param p_path1: First path (used by all actions)
         :param p_path2: Second path (used only by C and B)
         :return: Nothing
