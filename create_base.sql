@@ -2,43 +2,50 @@ DROP TABLE if exists public."TB_FILE";
 
 CREATE TABLE public."TB_FILE"
 (
-    "ID_FILE" bigserial,
-    "TX_FILE_NAME" text COLLATE pg_catalog."default" NOT NULL,
-    "TX_FILE_PATH" text COLLATE pg_catalog."default" NOT NULL,
-    "N_LENGTH" bigint NOT NULL,
-    "DT_CRE" timestamp(4) without time zone NOT NULL DEFAULT now(),
-    "DT_LAST_MOD" timestamp(4) without time zone NOT NULL,
-    "S_GROUP" character varying(33) COLLATE pg_catalog."default" NOT NULL,
-    "S_OWNER" character varying(33) COLLATE pg_catalog."default" NOT NULL,
-    "S_PERMISSIONS" character varying(8) COLLATE pg_catalog."default" NOT NULL,
-    "S_EXTENSION" character varying(25) COLLATE pg_catalog."default" NOT NULL,
-    CONSTRAINT "TB_FILE_pkey" PRIMARY KEY ("ID_FILE")
-        USING INDEX TABLESPACE ssd_space
+  "TX_FILE_NAME" text NOT NULL,
+  "TX_FILE_PATH" text NOT NULL,
+  "N_LENGTH" bigint,
+  "DT_LAST_MOD" timestamp without time zone,
+  "S_GROUP" character varying(20),
+  "S_OWNER" character varying(20),
+  "S_PERMISSIONS" character varying(3),
+  "S_EXTENSION" character varying(10),
+  CONSTRAINT "TB_FILE_pkey" PRIMARY KEY ("TX_FILE_NAME", "TX_FILE_PATH")
 )
 WITH (
-    OIDS = FALSE
-)
-TABLESPACE ssd_space;
-
+  OIDS=FALSE
+);
 ALTER TABLE public."TB_FILE"
-    OWNER to postgres;
-	
+  OWNER TO postgres;
+
 DROP TABLE if exists public."TB_ACTION";
 
 CREATE TABLE public."TB_ACTION"
 (
-    "ID_ACTION" bigserial,
-    "S_ACTION_TYPE" character varying(1) COLLATE pg_catalog."default" NOT NULL,
-    "TX_PATH1" text COLLATE pg_catalog."default" NOT NULL,
-    "TX_PATH2" text COLLATE pg_catalog."default",
-    "DT_CRE" timestamp(4) without time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "TB_ACTION_pkey" PRIMARY KEY ("ID_ACTION")
-        USING INDEX TABLESPACE ssd_space
+  "ID_ACTION" bigserial,
+  "S_ACTION_TYPE" character varying(1) NOT NULL,
+  "TX_PATH1" text,
+  "TX_PATH2" text,
+  "ID_CYCLE" uuid NOT NULL,
+  CONSTRAINT "TB_ACTION_pkey" PRIMARY KEY ("ID_ACTION")
 )
 WITH (
-    OIDS = FALSE
-)
-TABLESPACE ssd_space;
-
+  OIDS=FALSE
+);
 ALTER TABLE public."TB_ACTION"
-    OWNER to postgres;
+  OWNER TO postgres;
+
+DROP TABLE if exists public."TB_CYCLE";
+
+CREATE TABLE public."TB_CYCLE"
+(
+  "ID_CYCLE" uuid NOT NULL,
+  "DT_START" timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  "DT_END" timestamp without time zone,
+  CONSTRAINT "TB_CYCLE_pkey" PRIMARY KEY ("ID_CYCLE")
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE public."TB_CYCLE"
+  OWNER TO postgres;
