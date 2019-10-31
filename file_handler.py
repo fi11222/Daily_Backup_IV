@@ -547,6 +547,7 @@ class FileHandler:
     def store_db(self):
         """
         Stores a file object directly to DB, bypassing buffers (no longer used)
+
         :return: Nothing
         """
         if g_verbose:
@@ -603,8 +604,23 @@ class FileHandler:
         # current process info for memory data
         l_process = psutil.Process(os.getpid())
 
+        # list of prefixes to ignore (fed from .dbignore files)
+        l_ignore_prefixes = []
+
         # walk the tree
         for l_dir, _, l_files in os.walk(p_root):
+            # ignore directory if prefix in l_ignore_prefixes
+            l_ignore = False
+            for l_prefix in l_ignore_prefixes:
+                if re.match(r'^{0}'.format(l_prefix), l_dir):
+                    if not g_silent:
+                        print('Ignore: {0}'.format(l_dir))
+                    l_ignore = True
+                    continue
+
+            if l_ignore:
+                continue
+
             if not g_silent:
                 print(
                     '{2} [{0:,.2f} Mb {1:,.2f} kF]'.format(
@@ -621,10 +637,21 @@ class FileHandler:
             for l_file_name in l_files:
                 l_full_file = os.path.join(l_dir, l_file_name)
 
+                # add the contents of .dbignore files to l_ignore_prefixes
+                if l_file_name == '.dbignore':
+                    with open(l_full_file, 'r') as l_fin:
+                        for l_line in l_fin.readlines():
+                            l_line = l_line.strip()
+                            if len(l_line) > 0:
+                                l_ignore_prefixes.append(os.path.join(l_dir, l_line))
+
+                    print('   l_ignore_prefixes:', repr(l_ignore_prefixes))
+                    if g_verbose:
+                        print('   l_ignore_prefixes:', repr(l_ignore_prefixes))
+
                 if os.path.islink(l_full_file):
                     if g_verbose:
                         print('   SYMLINK: ', l_full_file)
-
                 else:
                     if g_verbose:
                         print('   l_full_file: ', l_full_file)
@@ -640,6 +667,9 @@ class FileHandler:
                             'FileHandler creation failure on: {0}:\nErr: {1}\nTraceback:\n{2}\n----------\n'.format(
                                 l_full_file, repr(e), traceback.format_exc()
                             ))
+
+        if not g_silent:
+            print('Prefixes ignored:', repr(l_ignore_prefixes))
 
     @classmethod
     def log_action(cls, p_type, p_path1, p_path2):
