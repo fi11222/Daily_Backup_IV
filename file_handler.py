@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 import traceback
+import argparse
 
 # from email.MIMEMultipart import MIMEMultipart
 # from email.MIMEText import MIMEText
@@ -37,6 +38,10 @@ __author__ = 'Nicolas Reimen'
 
 g_verbose = False
 g_silent = False
+g_dryrun = False
+g_show_delete = False
+
+g_deleted_files = []
 
 g_dbServer = 'localhost'
 g_dbDatabase = 'File_Base'
@@ -45,8 +50,8 @@ g_dbPassword = 'murugan!'
 
 g_timeZone = 'Asia/Calcutta'
 
-g_mailSender = 'nicolas.reimen@gmail.com'
-g_mailSenderPassword = '17Siratal'
+g_mailSender = 'nr.systems.notifications@gmail.com'
+g_mailSenderPassword = '15Eyyaka'
 
 g_mailRecipients = ['nicolas.reimen@gmail.com']
 
@@ -91,7 +96,7 @@ g_sesPassword = ''
 #
 # CREATE TABLE public."TB_ACTION"
 # (
-#   "ID_ACTION" bigint NOT NULL DEFAULT nextval('"TB_ACTION_ID_ACTION_seq"'::regclass),
+#   "ID_ACTION" bigserial,
 #   "S_ACTION_TYPE" character varying(1) NOT NULL,
 #   "TX_PATH1" text,
 #   "TX_PATH2" text,
@@ -475,8 +480,11 @@ class FileHandler:
 
         :return: Nothing
         """
-        if g_verbose:
+        if (g_verbose or g_show_delete) and not g_silent:
             print('Deleting : ' + self.m_full_path)
+
+        if g_show_delete:
+            g_deleted_files.append(self.m_full_path)
 
         FileHandler.cm_deleted_count += 1
         FileHandler.cm_deleted_size += self.m_size
@@ -513,8 +521,7 @@ class FileHandler:
                 # subprocess.call(['sudo', 'mkdir', '-p', l_target_path])
                 FileHandler.execute_command(['sudo', 'mkdir', '-p', l_target_path])
 
-            # subprocess.call(['sudo', 'cp', '-p', self.m_full_path, l_target_file])
-            # FileHandler.log_action('C', self.m_full_path, l_target_file)
+            # cp -p ---> preserve attributes (dates, owner, etc)
             if FileHandler.execute_command(['sudo', 'cp', '-p', self.m_full_path, l_target_file]):
                 FileHandler.log_action('C', self.m_full_path, l_target_file)
             else:
@@ -609,18 +616,7 @@ class FileHandler:
 
         # walk the tree
         for l_dir, _, l_files in os.walk(p_root):
-            # ignore directory if prefix in l_ignore_prefixes
-            l_ignore = False
-            for l_prefix in l_ignore_prefixes:
-                if re.match(r'^{0}'.format(l_prefix), l_dir):
-                    if not g_silent:
-                        print('Ignore: {0}'.format(l_dir))
-                    l_ignore = True
-                    continue
-
-            if l_ignore:
-                continue
-
+            # print directory info
             if not g_silent:
                 print(
                     '{2} [{0:,.2f} Mb {1:,.2f} kF]'.format(
@@ -630,24 +626,35 @@ class FileHandler:
                     l_dir
                 )
 
+            # load .dbignore if there is one
+            if '.dbignore' in l_files:
+                with open(os.path.join(l_dir, '.dbignore'), 'r') as l_fin:
+                    for l_line in l_fin.readlines():
+                        l_line = l_line.strip()
+                        if len(l_line) > 0:
+                            l_ignore_prefixes.append(os.path.join(l_dir, l_line))
+
+                if not g_silent:
+                    print('   l_ignore_prefixes:', repr(l_ignore_prefixes))
+
+            # ignore directory if prefix in l_ignore_prefixes
+            l_ignore = False
+            for l_prefix in l_ignore_prefixes:
+                if re.match(r'^{0}'.format(l_prefix), l_dir):
+                    if not g_silent:
+                        print('   Ignored: {0}'.format(l_dir))
+                    l_ignore = True
+                    break
+
+            if l_ignore:
+                continue
+
             if g_verbose:
                 print('   [F]', l_files)
 
-            # lists files in directory
+            # lists files in directory and apply appropriate operator on each of them
             for l_file_name in l_files:
                 l_full_file = os.path.join(l_dir, l_file_name)
-
-                # add the contents of .dbignore files to l_ignore_prefixes
-                if l_file_name == '.dbignore':
-                    with open(l_full_file, 'r') as l_fin:
-                        for l_line in l_fin.readlines():
-                            l_line = l_line.strip()
-                            if len(l_line) > 0:
-                                l_ignore_prefixes.append(os.path.join(l_dir, l_line))
-
-                    print('   l_ignore_prefixes:', repr(l_ignore_prefixes))
-                    if g_verbose:
-                        print('   l_ignore_prefixes:', repr(l_ignore_prefixes))
 
                 if os.path.islink(l_full_file):
                     if g_verbose:
@@ -667,9 +674,6 @@ class FileHandler:
                             'FileHandler creation failure on: {0}:\nErr: {1}\nTraceback:\n{2}\n----------\n'.format(
                                 l_full_file, repr(e), traceback.format_exc()
                             ))
-
-        if not g_silent:
-            print('Prefixes ignored:', repr(l_ignore_prefixes))
 
     @classmethod
     def log_action(cls, p_type, p_path1, p_path2):
@@ -812,20 +816,21 @@ class FileHandler:
         l_stats += 'Deleted count   : {0:,d}\n'.format(cls.cm_deleted_count)
         l_stats += 'Deleted size    : {0:,.2f} Mb\n'.format(cls.cm_deleted_size / (1024 * 1024))
 
-        # decide to do the Empty dir removal if at least one file was deleted
-        l_do_empty_dirs = (cls.cm_deleted_count > 0)
+        if not g_dryrun:
+            # decide to do the Empty dir removal if at least one file was deleted
+            l_do_empty_dirs = (cls.cm_deleted_count > 0)
 
-        if g_verbose:
-            print('+++++++ BACKUP ++++++++++')
+            if g_verbose:
+                print('+++++++ BACKUP ++++++++++')
 
-        # temp buffer to in mem dict copy after dry run
-        cls.cm_dry_run = False
-        cls.cm_mem_store = cls.cm_mem_tmp
-        cls.cm_mem_tmp = dict()
-        cls.scan_dir(p_to, compare_file, 'B')
-        cls.copy_remaining()
-        if l_do_empty_dirs:
-            cls.delete_empty_dirs()
+            # temp buffer to in mem dict copy after dry run
+            cls.cm_dry_run = False
+            cls.cm_mem_store = cls.cm_mem_tmp
+            cls.cm_mem_tmp = dict()
+            cls.scan_dir(p_to, compare_file, 'B')
+            cls.copy_remaining()
+            if l_do_empty_dirs:
+                cls.delete_empty_dirs()
 
         if not g_silent:
             print(l_stats)
@@ -1026,7 +1031,34 @@ if __name__ == "__main__":
     print('| Prod.  - 29/05/2018                                        |')
     print('| v. 1.1 - 21/09/2018 Enhanced error handling                |')
     print('| v. 1.2 - 05/12/2018 Better logging (TB_CYCLE)              |')
+    print('| v. 1.3 - 15/05/2020 cmd line options                       |')
     print('+------------------------------------------------------------+')
+
+    l_parser = argparse.ArgumentParser(description='Daily backup v. IV')
+    l_parser.add_argument('-v', help='Verbose', action='store_true', default=False)
+    l_parser.add_argument('-s', help='Silent - no messages at all', action='store_true', default=False)
+    l_parser.add_argument('-d', help='Dry-run only', action='store_true', default=False)
+    l_parser.add_argument('--daily', help='Perform only daily backup', action='store_true', default=False)
+    l_parser.add_argument('--show-delete', help='Display path of deleted files', action='store_true', default=False)
+
+    # dummy class to receive the parsed args
+    class C:
+        def __init__(self):
+            self.v = False
+            self.s = False
+            self.d = False
+            self.daily = False
+            self.show_delete = False
+
+    # do the argument parse
+    c = C()
+    l_parser.parse_args()
+    parser = l_parser.parse_args(namespace=c)
+
+    g_verbose = c.v
+    g_silent = c.s
+    g_dryrun = c.d
+    g_show_delete = c.show_delete
 
     # testing
     # l_original_prefix = '/home/fi11222/disk-partage/Dev/FileHandler/Test/Original'
@@ -1039,14 +1071,16 @@ if __name__ == "__main__":
     g_err_log_file.write('Errors:\n')
 
     l_msg = 'file_handler.py\n\n'
+    if g_dryrun:
+        l_msg += '-- Dryrun only --\n\n'
     try:
         # daily backup
-        l_msg = '--------- Daily Backup ---------\n\n'
+        l_msg += '--------- Daily Backup ---------\n\n'
         l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-partage', '/home/fi11222/disk-backup/Partage')
         l_msg += l_stats_msg + '\n'
 
         # do weekly backup on thursday
-        if datetime.datetime.today().weekday() == 0:
+        if datetime.datetime.today().weekday() == 0 and not c.daily:
             l_msg += '--------- Weekly Backup ---------\n\n'
             l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-partage', '/home/fi11222/disk-LTStore/Partage')
             l_msg += l_stats_msg + '\n'
@@ -1062,3 +1096,8 @@ if __name__ == "__main__":
         FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg, g_err_log_path)
     else:
         FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg)
+
+    if g_show_delete and not g_silent:
+        print('*** Deleted files ***')
+        for f in g_deleted_files:
+            print(f)
