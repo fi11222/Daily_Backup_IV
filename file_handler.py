@@ -370,7 +370,7 @@ class FileHandler:
         try:
             l_out = subprocess.Popen(p_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-            l_stdout, l_stderr = l_out.communicate()
+            l_stdout, l_stderr = l_out.communicate(timeout=180)
             l_stdout = l_stdout.decode('utf-8').strip() if l_stdout is not None else ''
             l_stderr = l_stderr.decode('utf-8').strip() if l_stderr is not None else ''
 
@@ -397,6 +397,8 @@ class FileHandler:
 
         :param p_path: file path
         """
+        global g_verbose
+
         l_info = os.stat(p_path)
 
         # absolute path
@@ -404,6 +406,8 @@ class FileHandler:
         # just the name of the file
         self.m_filename = os.path.basename(p_path)
         self.m_path_suffix = re.sub('^' + FileHandler.cm_prefix + '/', '', p_path)
+
+        # g_verbose = re.search(r'KSU Email', p_path) is not None
 
         l_list_path = self.m_path_suffix.split('/')
         l_list_path = l_list_path[:len(l_list_path)-1]
@@ -518,8 +522,8 @@ class FileHandler:
                 if g_verbose:
                     print('Creating path : ', l_target_path)
 
-                # subprocess.call(['sudo', 'mkdir', '-p', l_target_path])
                 FileHandler.execute_command(['sudo', 'mkdir', '-p', l_target_path])
+                FileHandler.execute_command(['sudo', 'chown', 'fi11222:fi11222', l_target_path])
 
             # cp -p ---> preserve attributes (dates, owner, etc)
             if FileHandler.execute_command(['sudo', 'cp', '-p', self.m_full_path, l_target_file]):
