@@ -14,9 +14,9 @@ import argparse
 # from email.MIMEMultipart import MIMEMultipart
 # from email.MIMEText import MIMEText
 
-print('before :', sys.path)
+# print('before :', sys.path)
 sys.path.append('/home/fi11222/.local/lib/python3.6/site-packages')
-print('after :', sys.path)
+# print('after :', sys.path)
 
 import os
 import pwd
@@ -357,27 +357,30 @@ class FileHandler:
                 FileHandler.cm_mem_tmp[l_file.get_key()] = l_file
 
     @classmethod
-    def execute_command(cls, p_cmd):
+    def execute_command(cls, p_cmd, p_shell=False):
         """
         Execute a command (passed as a list) and recovers the outputs. If stderr or stdout is not empty -->
         log the error
-        :param p_cmd: the command (as a list)
+
+        :param p_cmd: the command (as a string if p_shell or a list otherwise)
+        :param p_shell: Popen() shell= parameter
         :return: False if something went wrong, True otherwise
         """
         # access to global variables
         global g_err_presence, g_err_log_file
 
+        l_cmd = p_cmd if not p_shell else ' '.join(p_cmd)
         try:
-            l_out = subprocess.Popen(p_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            l_out = subprocess.Popen(p_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=p_shell)
 
             l_stdout, l_stderr = l_out.communicate(timeout=180)
             l_stdout = l_stdout.decode('utf-8').strip() if l_stdout is not None else ''
             l_stderr = l_stderr.decode('utf-8').strip() if l_stderr is not None else ''
 
-            if len(l_stdout) > 0 or len(l_stderr) > 0:
+            if l_out.returncode != 0 or len(l_stderr) > 0:
                 g_err_presence = True
-                g_err_log_file.write('Command returned: {0}:\n{1}{2}----------\n'.format(
-                    ' '.join(p_cmd),
+                g_err_log_file.write('Command [{0}] ret code: {1}\n{2}{3}----------\n'.format(
+                    l_cmd, l_out.returncode,
                     'stdout:' + l_stdout + '\n' if len(l_stdout) > 0 else '',
                     'stderr:' + l_stderr + '\n' if len(l_stderr) > 0 else ''
                 ))
@@ -386,8 +389,8 @@ class FileHandler:
                 return True
         except Exception as e:
             g_err_presence = True
-            g_err_log_file.write('Command did not return: {0}:\nErr: {1}\nTraceback:\n{2}\n----------\n'.format(
-                ' '.join(p_cmd), repr(e), traceback.format_exc()
+            g_err_log_file.write('Command did not return: {0}:\nErr: {1}\nTraceback:\n{2}----------\n'.format(
+                l_cmd, repr(e), traceback.format_exc()
             ))
             return False
 
@@ -1022,28 +1025,17 @@ class FileHandler:
             print('Email sending error :', repr(e))
             print(l_message)
 
+
 # ---------------------------------------------------- Main section ----------------------------------------------------
-
-
 if __name__ == "__main__":
-    print('+------------------------------------------------------------+')
-    print('| File Backup and other stuff                                |')
-    print('|                                                            |')
-    print('| file_handler.py                                            |')
-    print('|                                                            |')
-    print('| v. 1.0 - 22/05/2018                                        |')
-    print('| Prod.  - 29/05/2018                                        |')
-    print('| v. 1.1 - 21/09/2018 Enhanced error handling                |')
-    print('| v. 1.2 - 05/12/2018 Better logging (TB_CYCLE)              |')
-    print('| v. 1.3 - 15/05/2020 cmd line options                       |')
-    print('+------------------------------------------------------------+')
-
     l_parser = argparse.ArgumentParser(description='Daily backup v. IV')
     l_parser.add_argument('-v', help='Verbose', action='store_true', default=False)
     l_parser.add_argument('-s', help='Silent - no messages at all', action='store_true', default=False)
     l_parser.add_argument('-d', help='Dry-run only', action='store_true', default=False)
     l_parser.add_argument('--daily', help='Perform only daily backup', action='store_true', default=False)
     l_parser.add_argument('--show-delete', help='Display path of deleted files', action='store_true', default=False)
+    l_parser.add_argument('--no-shutdown', help='Do not perform shutdown after execution',
+                          action='store_true', default=False)
 
     # dummy class to receive the parsed args
     class C:
@@ -1053,6 +1045,7 @@ if __name__ == "__main__":
             self.d = False
             self.daily = False
             self.show_delete = False
+            self.no_shutdown = False
 
     # do the argument parse
     c = C()
@@ -1069,7 +1062,25 @@ if __name__ == "__main__":
     # l_backup_prefix = '/home/fi11222/disk-partage/Dev/FileHandler/Test/Backup'
     # g_verbose = True
 
-    print('g_err_log_path: ', g_err_log_path)
+    if not g_silent:
+        print('+------------------------------------------------------------+')
+        print('| File Backup and other stuff                                |')
+        print('|                                                            |')
+        print('| file_handler.py                                            |')
+        print('|                                                            |')
+        print('| v. 1.0 - 22/05/2018                                        |')
+        print('| Prod.  - 29/05/2018                                        |')
+        print('| v. 1.1 - 21/09/2018 Enhanced error handling                |')
+        print('| v. 1.2 - 05/12/2018 Better logging (TB_CYCLE)              |')
+        print('| v. 1.3 - 15/05/2020 cmd line options                       |')
+        print('+------------------------------------------------------------+')
+
+        print('Verbose        :', g_verbose)
+        print('Silent         :', g_silent)
+        print('Dry-run only   :', g_dryrun)
+        print('Show deleted   :', g_show_delete)
+        print('g_err_log_path :', g_err_log_path)
+
     # g_err_log_file = open(g_err_log_path, "w")
     g_err_log_file = io.StringIO()
     g_err_log_file.write('Errors:\n')
@@ -1091,7 +1102,12 @@ if __name__ == "__main__":
     except Exception as e0:
         l_msg += 'High level Python Error:\n' + repr(e0) + '\n' + traceback.format_exc()
 
-    # g_err_log_file.close()
+    # shutting down the system
+    if not c.no_shutdown:
+        if not g_silent:
+            print('Shutting down in 5 minute')
+        print('Shutdown return value:', FileHandler.execute_command('/sbin/shutdown -P +5', p_shell=True))
+
     if not g_silent:
         print('Sending e-mail ...')
     if g_err_presence:
@@ -1105,3 +1121,6 @@ if __name__ == "__main__":
         print('*** Deleted files ***')
         for f in g_deleted_files:
             print(f)
+
+    if not g_silent:
+        print('*** END ***')
