@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import re
+import shutil
 import sys
 
 from email.mime.application import MIMEApplication
@@ -10,24 +11,24 @@ from email.mime.multipart import MIMEMultipart
 
 import traceback
 import argparse
-
-# from email.MIMEMultipart import MIMEMultipart
-# from email.MIMEText import MIMEText
-
-# print('before :', sys.path)
-sys.path.append('/home/fi11222/.local/lib/python3.6/site-packages')
-# print('after :', sys.path)
-
 import os
 import pwd
 import grp
 import datetime
-import psycopg2
 import psutil
 import io
 import subprocess
 import smtplib
 import uuid
+
+# from email.MIMEMultipart import MIMEMultipart
+# from email.MIMEText import MIMEText
+
+print('before :', sys.path)
+sys.path.append('/home/fi11222/.local/lib/python3.6/site-packages')
+print('after :', sys.path)
+
+import psycopg2
 
 __author__ = 'Nicolas Reimen'
 
@@ -38,20 +39,21 @@ __author__ = 'Nicolas Reimen'
 
 g_verbose = False
 g_silent = False
-g_dryrun = False
+g_dry_run = False
 g_show_delete = False
 
 g_deleted_files = []
 
 g_dbServer = 'localhost'
 g_dbDatabase = 'File_Base'
-g_dbUser = 'postgres'
+g_dbUser = 'root'
 g_dbPassword = 'murugan!'
 
 g_timeZone = 'Asia/Calcutta'
 
 g_mailSender = 'nr.systems.notifications@gmail.com'
-g_mailSenderPassword = '15Eyyaka'
+# g_mailSenderPassword = 'NotifNicAcc!'
+g_mailSenderPassword = 'ycrgxdhzheqqcexs'
 
 g_mailRecipients = ['nicolas.reimen@gmail.com']
 
@@ -206,9 +208,11 @@ class FileHandler:
         cls.cm_prefix = p_prefix
 
     @classmethod
-    def open_connection(cls):
+    def open_connection(cls, p_test=False):
         """
         Open PostgreSQL connection & sets up buffers
+
+        :param p_test: True --> Perform DB connection check and retrieves table list
         :return:
         """
         cls.cm_db_buffer = io.StringIO()
@@ -224,6 +228,15 @@ class FileHandler:
 
         if not g_silent:
             print('Connection to {0} / {1} established'.format(g_dbServer, g_dbDatabase))
+
+        if p_test:
+            # connects to the DB and retrieves list of tables (should be 3)
+            l_cursor_read = cls.cm_db_connection.cursor()
+            l_cursor_read.execute(
+                """SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'""")
+            for l_table, in l_cursor_read.fetchall():
+                print(l_table)
+            l_cursor_read.close()
 
     @classmethod
     def purge(cls):
@@ -241,24 +254,28 @@ class FileHandler:
         try:
             l_cursor_write.copy_from(
                 cls.cm_db_buffer,
-                '"TB_FILE"',
+                'TB_FILE',
                 columns=(
-                    '"TX_FILE_NAME"',
-                    '"TX_FILE_PATH"',
-                    '"N_LENGTH"',
-                    '"DT_LAST_MOD"',
-                    '"S_GROUP"',
-                    '"S_OWNER"',
-                    '"S_PERMISSIONS"',
-                    '"S_EXTENSION"'
+                    'TX_FILE_NAME',
+                    'TX_FILE_PATH',
+                    'N_LENGTH',
+                    'DT_LAST_MOD',
+                    'S_GROUP',
+                    'S_OWNER',
+                    'S_PERMISSIONS',
+                    'S_EXTENSION'
                 )
             )
             FileHandler.cm_db_connection.commit()
         except Exception as e:
             FileHandler.cm_db_connection.rollback()
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
+            with open('cm_db_buffer.txt', 'w') as l_fdump:
+                cls.cm_db_buffer.seek(0)
+                shutil.copyfileobj(cls.cm_db_buffer, l_fdump)
+
+            print('DB ERROR:', repr(e))
+            print('cm_db_buffer dumped to cm_db_buffer.txt')
 
             sys.exit(0)
         finally:
@@ -277,20 +294,24 @@ class FileHandler:
             try:
                 l_cursor_write.copy_from(
                     cls.cm_db_buffer_action,
-                    '"TB_ACTION"',
+                    'TB_ACTION',
                     columns=(
-                        '"ID_CYCLE"',
-                        '"S_ACTION_TYPE"',
-                        '"TX_PATH1"',
-                        '"TX_PATH2"'
+                        'ID_CYCLE',
+                        'S_ACTION_TYPE',
+                        'TX_PATH1',
+                        'TX_PATH2'
                     )
                 )
                 FileHandler.cm_db_connection.commit()
             except Exception as e:
                 FileHandler.cm_db_connection.rollback()
 
-                if not g_silent:
-                    print('DB ERROR:', repr(e))
+                with open('cm_db_buffer_action.txt', 'w') as l_fdump:
+                    cls.cm_db_buffer_action.seek(0)
+                    shutil.copyfileobj(cls.cm_db_buffer_action, l_fdump)
+
+                print('DB ERROR:', repr(e))
+                print('cm_db_buffer_action dumped to cm_db_buffer_action.txt')
 
                 sys.exit(0)
             finally:
@@ -321,9 +342,8 @@ class FileHandler:
         except Exception as e:
             FileHandler.cm_db_connection.rollback()
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
-                print(l_cursor_write.query)
+            print('DB ERROR:', repr(e))
+            print(l_cursor_write.query)
 
             sys.exit(0)
         finally:
@@ -458,9 +478,10 @@ class FileHandler:
         FileHandler.cm_mem_store[self.get_key()] = self
         FileHandler.cm_total_size += self.m_size
 
+        # no backslash allowed in the filename or path --> must be escaped
         FileHandler.cm_db_buffer.write('{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}\n'.format(
-            self.m_filename,
-            self.m_path_suffix,
+            self.m_filename.replace('\\', r'\\'),
+            self.m_path_suffix.replace('\\', r'\\'),
             self.m_size,
             self.m_lmd.strftime('%Y-%m-%d %H:%M:%S'),
             self.m_group,
@@ -593,9 +614,8 @@ class FileHandler:
         except Exception as e:
             FileHandler.cm_db_connection.rollback()
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
-                print(l_cursor_write.query)
+            print('DB ERROR:', repr(e))
+            print(l_cursor_write.query)
 
             sys.exit(0)
         finally:
@@ -659,7 +679,7 @@ class FileHandler:
             if g_verbose:
                 print('   [F]', l_files)
 
-            # lists files in directory and apply appropriate operator on each of them
+            # Lists files in directory and apply appropriate operator on each of them
             for l_file_name in l_files:
                 l_full_file = os.path.join(l_dir, l_file_name)
 
@@ -695,7 +715,10 @@ class FileHandler:
         """
 
         cls.cm_db_buffer_action.write('{0}\t{1}\t{2}\t{3}\n'.format(
-            cls.cm_cycle_uuid, p_type, p_path1, p_path2
+            cls.cm_cycle_uuid,
+            p_type,
+            p_path1.replace('\\', r'\\'),
+            '' if p_path2 is None else p_path2.replace('\\', r'\\')
         ))
 
     @classmethod
@@ -728,9 +751,8 @@ class FileHandler:
         except Exception as e:
             FileHandler.cm_db_connection.rollback()
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
-                print(l_cursor_write.query)
+            print('DB ERROR:', repr(e))
+            print(l_cursor_write.query)
 
             sys.exit(0)
         finally:
@@ -787,9 +809,8 @@ class FileHandler:
         except Exception as e:
             cls.cm_db_connection.rollback()
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
-                print(l_cursor_write.query)
+            print('DB ERROR:', repr(e))
+            print(l_cursor_write.query)
 
             sys.exit(0)
         finally:
@@ -823,7 +844,7 @@ class FileHandler:
         l_stats += 'Deleted count   : {0:,d}\n'.format(cls.cm_deleted_count)
         l_stats += 'Deleted size    : {0:,.2f} Mb\n'.format(cls.cm_deleted_size / (1024 * 1024))
 
-        if not g_dryrun:
+        if not g_dry_run:
             # decide to do the Empty dir removal if at least one file was deleted
             l_do_empty_dirs = (cls.cm_deleted_count > 0)
 
@@ -859,9 +880,8 @@ class FileHandler:
         except Exception as e:
             cls.cm_db_connection.rollback()
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
-                print(l_cursor_write.query)
+            print('DB ERROR:', repr(e))
+            print(l_cursor_write.query)
 
             sys.exit(0)
         finally:
@@ -890,9 +910,8 @@ class FileHandler:
                 l_row_count += 1
         except Exception as e:
 
-            if not g_silent:
-                print('DB ERROR:', repr(e))
-                print(l_cursor_read.query)
+            print('DB ERROR:', repr(e))
+            print(l_cursor_read.query)
 
             sys.exit(0)
         finally:
@@ -1032,8 +1051,10 @@ if __name__ == "__main__":
     l_parser.add_argument('-v', help='Verbose', action='store_true', default=False)
     l_parser.add_argument('-s', help='Silent - no messages at all', action='store_true', default=False)
     l_parser.add_argument('-d', help='Dry-run only', action='store_true', default=False)
+    l_parser.add_argument('--test-email', help='Send a test e-mail', action='store_true', default=False)
     l_parser.add_argument('--daily', help='Perform only daily backup', action='store_true', default=False)
     l_parser.add_argument('--show-delete', help='Display path of deleted files', action='store_true', default=False)
+    l_parser.add_argument('--db-check', help='Test connection to DB server', action='store_true', default=False)
     l_parser.add_argument('--no-shutdown', help='Do not perform shutdown after execution',
                           action='store_true', default=False)
 
@@ -1046,6 +1067,8 @@ if __name__ == "__main__":
             self.daily = False
             self.show_delete = False
             self.no_shutdown = False
+            self.test_email = False
+            self.db_check = False
 
     # do the argument parse
     c = C()
@@ -1054,7 +1077,7 @@ if __name__ == "__main__":
 
     g_verbose = c.v
     g_silent = c.s
-    g_dryrun = c.d
+    g_dry_run = c.d
     g_show_delete = c.show_delete
 
     # testing
@@ -1064,7 +1087,7 @@ if __name__ == "__main__":
 
     if not g_silent:
         print('+------------------------------------------------------------+')
-        print('| File Backup and other stuff                                |')
+        print('| File Backup and system shutdown                            |')
         print('|                                                            |')
         print('| file_handler.py                                            |')
         print('|                                                            |')
@@ -1073,11 +1096,13 @@ if __name__ == "__main__":
         print('| v. 1.1 - 21/09/2018 Enhanced error handling                |')
         print('| v. 1.2 - 05/12/2018 Better logging (TB_CYCLE)              |')
         print('| v. 1.3 - 15/05/2020 cmd line options                       |')
+        print('| v. 1.4 - 13/10/2022 test e-mail option                     |')
+        print('| v. 1.5 - 15/10/2023 DB check option                        |')
         print('+------------------------------------------------------------+')
 
         print('Verbose        :', g_verbose)
         print('Silent         :', g_silent)
-        print('Dry-run only   :', g_dryrun)
+        print('Dry-run only   :', g_dry_run)
         print('Show deleted   :', g_show_delete)
         print('g_err_log_path :', g_err_log_path)
 
@@ -1085,42 +1110,47 @@ if __name__ == "__main__":
     g_err_log_file = io.StringIO()
     g_err_log_file.write('Errors:\n')
 
-    l_msg = 'file_handler.py\n\n'
-    if g_dryrun:
-        l_msg += '-- Dryrun only --\n\n'
-    try:
-        # daily backup
-        l_msg += '--------- Daily Backup ---------\n\n'
-        l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-partage', '/home/fi11222/disk-backup/Partage')
-        l_msg += l_stats_msg + '\n'
-
-        # do weekly backup on thursday
-        if datetime.datetime.today().weekday() == 0 and not c.daily:
-            l_msg += '--------- Weekly Backup ---------\n\n'
-            l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-partage', '/home/fi11222/disk-LTStore/Partage')
-            l_msg += l_stats_msg + '\n'
-    except Exception as e0:
-        l_msg += 'High level Python Error:\n' + repr(e0) + '\n' + traceback.format_exc()
-
-    # shutting down the system
-    if not c.no_shutdown:
-        if not g_silent:
-            print('Shutting down in 5 minute')
-        print('Shutdown return value:', FileHandler.execute_command('/sbin/shutdown -P +5', p_shell=True))
-
-    if not g_silent:
-        print('Sending e-mail ...')
-    if g_err_presence:
-        l_msg += '*** THERE ARE ERRORS ***\n'
-        print('*** THERE ARE ERRORS ***')
-        FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg, g_err_log_path)
+    if c.db_check:
+        FileHandler.open_connection(p_test=True)
+    elif c.test_email:
+        FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup Test Email]', 'This is a test')
     else:
-        FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg)
+        l_msg = 'file_handler.py\n\n'
+        if g_dry_run:
+            l_msg += '-- Dry run only --\n\n'
+        try:
+            # daily backup
+            l_msg += '--------- Daily Backup ---------\n\n'
+            l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-share', '/home/fi11222/disk-backup/Partage')
+            l_msg += l_stats_msg + '\n'
 
-    if g_show_delete and not g_silent:
-        print('*** Deleted files ***')
-        for f in g_deleted_files:
-            print(f)
+            # do weekly backup on thursday
+            if datetime.datetime.today().weekday() == 0 and not c.daily:
+                l_msg += '--------- Weekly Backup ---------\n\n'
+                l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-sharee', '/home/fi11222/disk-LTStore/Partage')
+                l_msg += l_stats_msg + '\n'
+        except Exception as e0:
+            l_msg += 'High level Python Error:\n' + repr(e0) + '\n' + traceback.format_exc()
 
-    if not g_silent:
-        print('*** END ***')
+        # shutting down the system
+        if not c.no_shutdown:
+            if not g_silent:
+                print('Shutting down in 5 minute')
+            print('Shutdown return value:', FileHandler.execute_command('/sbin/shutdown -P +5', p_shell=True))
+
+        if not g_silent:
+            print('Sending e-mail ...')
+        if g_err_presence:
+            l_msg += '*** THERE ARE ERRORS ***\n'
+            print('*** THERE ARE ERRORS ***')
+            FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg, g_err_log_path)
+        else:
+            FileHandler.send_mail(g_mailSender, g_mailSender, '[Daily Backup]', l_msg)
+
+        if g_show_delete and not g_silent:
+            print('*** Deleted files ***')
+            for f in g_deleted_files:
+                print(f)
+
+        if not g_silent:
+            print('*** END ***')
