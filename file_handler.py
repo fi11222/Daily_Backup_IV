@@ -497,6 +497,7 @@ class FileHandler:
     def get_key(self):
         """
         Key for dictionary storage / lookup: Suffix + file name
+
         :return: Nothing
         """
         return os.path.join(self.m_path_suffix, self.m_filename)
@@ -1127,7 +1128,7 @@ if __name__ == "__main__":
             # do weekly backup on thursday
             if datetime.datetime.today().weekday() == 0 and not c.daily:
                 l_msg += '--------- Weekly Backup ---------\n\n'
-                l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-sharee', '/home/fi11222/disk-LTStore/Partage')
+                l_stats_msg = FileHandler.do_backup('/home/fi11222/disk-share', '/home/fi11222/disk-LTStore/Partage')
                 l_msg += l_stats_msg + '\n'
         except Exception as e0:
             l_msg += 'High level Python Error:\n' + repr(e0) + '\n' + traceback.format_exc()
